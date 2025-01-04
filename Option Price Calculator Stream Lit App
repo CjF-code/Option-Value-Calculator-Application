@@ -1,0 +1,132 @@
+import streamlit as st
+import black_scholes as bs
+import numpy as np
+
+# Initialize session state
+if "option_display" not in st.session_state:
+    st.session_state["option_display"] = "Call"
+
+# User parameter inputs
+with st.sidebar:
+    st.header("Black Scholes Paramater Input:")
+    r = st.number_input(
+        "Risk Free Rate", max_value=1.0, min_value=0.0, format="%0.3f", value=0.01
+    )
+    S = st.number_input(
+        "Spot Price", step=1.0, min_value=0.01, format="%0.2f", value=30.0
+    )
+    K = st.number_input(
+        "Strike Price", step=1.0, min_value=0.01, format="%0.2f", value=40.0
+    )
+    T = (
+        st.number_input("Time to maturity (Days)", min_value=0.1, step=1.0, value=240.0)
+        / 365
+    )
+    sigma = st.number_input("Volatility", min_value=0.001, format="%0.3f", value=0.3)
+
+    st.header("Heat Map Axis Input:")
+    axis_options = ["Spot Price", "Strike Price", "Time to maturity", "Volatility"]
+    x_axis_var = st.selectbox("x Axis", axis_options, index=0)
+    y_axis_var = st.selectbox("y Axis", axis_options, index=1)
+
+# Dictionary of axis names and their corresponding variable in the Black-Scholes formula
+axis_dict = {
+    "Spot Price": "S",
+    "Strike Price": "K",
+    "Time to maturity": "T",
+    "Volatility": "sigma",
+}
+
+# Calculate option prices for call and put
+call_option = bs.Option(r, S, K, T, sigma, "c")
+put_option = bs.Option(r, S, K, T, sigma, "p")
+
+# Option price and Greeks display
+st.subheader("Option Price using Black Scholes:")
+col1, col2 = st.columns([1, 1])
+with col1:
+    st.markdown(
+        f"""
+        <div style="background-color: #6dbf53; padding: 20px; border-radius: 10px; text-align: center;">
+            <span style="color: white; font-size: 24px; font-weight: bold;">Call: {call_option.option_price:.4f}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.latex(f"""\\rho: {call_option.rho:.4f} \,|\, \\theta: {call_option.theta:.4f}""")
+
+with col2:
+    st.markdown(
+        f"""
+        <div style="background-color: #5c99d9; padding: 20px; border-radius: 10px; text-align: center;">
+            <span style="color: white; font-size: 24px; font-weight: bold;">Put: {put_option.option_price:.4f}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.latex(f"""\\rho: {put_option.rho:.4f}  \,|\, \\theta: {put_option.theta:.4f}""")
+
+st.latex(
+    f"""\\Delta: {call_option.delta:.4f} \,|\, \\gamma: {call_option.gamma:.4f} \,|\, \\upsilon: {call_option.vega:.4f}"""
+)
+
+# Option display toggle
+col1, col2 = st.columns([1, 1])
+with col1:
+    if st.button("Display Call", key="display_call", use_container_width=True):
+        st.session_state["option_display"] = "Call"
+with col2:
+    if st.button("Display Put", key="display_put", use_container_width=True):
+        st.session_state["option_display"] = "Put"
+
+# Calculate prices for current option type
+current_option = (
+    call_option if st.session_state["option_display"] == "Call" else put_option
+)
+x_var_grid, y_var_grid = np.meshgrid(
+    getattr(current_option, f"{axis_dict[x_axis_var]}_range"),
+    getattr(current_option, f"{axis_dict[y_axis_var]}_range"),
+)
+prices = np.zeros(x_var_grid.shape)
+
+for i in range(len(getattr(current_option, f"{axis_dict[x_axis_var]}_range"))):
+    for j in range(len(getattr(current_option, f"{axis_dict[y_axis_var]}_range"))):
+        # Create parameter dictionary for current iteration
+        current_params = {
+            "r": r,
+            "S": S,
+            "K": K,
+            "T": T,
+            "sigma": sigma,
+        }
+
+        # Update values based on current position in grid
+        current_params[axis_dict[x_axis_var]] = getattr(
+            current_option, f"{axis_dict[x_axis_var]}_range"
+        )[i]
+        current_params[axis_dict[y_axis_var]] = getattr(
+            current_option, f"{axis_dict[y_axis_var]}_range"
+        )[j]
+
+        # Calculate price
+        prices[j, i] = bs.blackScholes(
+            current_params["r"],
+            current_params["S"],
+            current_params["K"],
+            current_params["T"],
+            current_params["sigma"],
+            type="c" if st.session_state["option_display"] == "Call" else "p",
+        )
+
+# Display heatmap
+if x_axis_var == y_axis_var:
+    st.error("Axis labels are the same, please choose two unique axis names.")
+else:
+    bs.create_heatmap(
+        st.session_state["option_display"],
+        x_axis_var,
+        y_axis_var,
+        current_option,
+        prices,
+        axis_dict,
+    )
